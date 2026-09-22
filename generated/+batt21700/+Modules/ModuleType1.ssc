@@ -1,0 +1,157 @@
+component ModuleType1
+    % ModuleType1:2
+    % Module Block
+    %    Model resolution: Detailed
+    %    Number of parallel assemblies: 10
+    %    Number of cells per parallel assembly: 2
+    %
+    %    MATLAB version: 25.2
+    %    Simscape Battery version: 25.2
+    %    Simscape code generated on: 22-Sep-2026 08:28:45
+
+    parameters(ExternalAccess=none)
+        AmbientResistanceConnectionIndex = getConnectionIndex(AmbientResistance,S); % AmbientResistanceConnectionIndex
+        P = 2; % Batteries in Parallel
+        S = 10; % Batteries in Series
+        NumXminConnections = 10; % Number of thermal connections at Xmin boundary
+        XminConnectionsMapping = [1 3 5 7 9 11 13 15 17 19]; % Cell models at Xmin boundary with thermal connections
+        NumCellsAtXminBoundary = 10; % Number of cells at Xmin boundary
+        CellsInModelAtXminBoundary = [1 1 1 1 1 1 1 1 1 1]; % Cells in model at Xmin boundary with thermal connections
+        NumXmaxConnections = 10; % Number of thermal connections at Xmax boundary
+        XmaxConnectionsMapping = [2 4 6 8 10 12 14 16 18 20]; % Cell models at Xmax boundary with thermal connections
+        NumCellsAtXmaxBoundary = 10; % Number of cells at Xmax boundary
+        CellsInModelAtXmaxBoundary = [1 1 1 1 1 1 1 1 1 1]; % Cells in model at Xmax boundary with thermal connections
+        CellCount = P*S; % Number of cells in battery
+        NumCellThermalNodeElements = ParallelAssembly(1).NumCellThermalNodeElements; % NumCellThermalNodeElements
+    end
+
+    parameters
+        SOC_vecCell = {[0, .1, .25, .5, .75, .9, 1],'1'}; % Vector of state-of-charge values, SOC
+        T_vecCell = {[278, 293, 313],'K'}; % Vector of temperatures, T
+        V0_matCell = {[3.49, 3.5, 3.51; 3.55, 3.57, 3.56; 3.62, 3.63, 3.64; 3.71, 3.71, 3.72; 3.91, 3.93, 3.94; 4.07, 4.08, 4.08; 4.19, 4.19, 4.19],'V'}; % Open-circuit voltage, V0(SOC,T)
+        V_rangeCell = {[0, inf],'V'}; % Terminal voltage operating range [Min Max]
+        R0_matCell = {[.0117, .0085, .009; .011, .0085, .009; .0114, .0087, .0092; .0107, .0082, .0088; .0107, .0083, .0091; .0113, .0085, .0089; .0116, .0085, .0089],'Ohm'}; % Terminal resistance, R0(SOC,T)
+        AHCell = {27,'A*hr'}; % Cell capacity, AH
+        extrapolation_optionCell = {simscape.enum.extrapolation.nearest,'1'}; % Extrapolation method for all tables
+        thermal_massCell = {100,'J/K'}; % Thermal mass
+        AmbientResistance = {25,'K/W'}; % Cell level ambient thermal path resistance
+        XminThermalResistance = {25,'K/W'}; % Cell-level thermal path resistance at Xmin boundary
+        XmaxThermalResistance = {25,'K/W'}; % Cell-level thermal path resistance at Xmax boundary
+    end
+
+    parameters(Access=private)
+        AmbientResistanceScaled = AmbientResistance; % Scaled cell level ambient thermal path resistance
+        XminThermalResistanceScaled = XminThermalResistance .* ones(1,NumXminConnections); % Scaled cell-level thermal path resistance at Xmin boundary
+        XmaxThermalResistanceScaled = XmaxThermalResistance .* ones(1,NumXmaxConnections); % Scaled cell-level thermal path resistance at Xmax boundary
+    end
+
+    nodes
+        p = foundation.electrical.electrical; % +
+        n = foundation.electrical.electrical; % -
+        AmbH = foundation.thermal.thermal; % AmbH
+        XminH = repmat(foundation.thermal.thermal,1,NumXminConnections); % XminH
+        XmaxH = repmat(foundation.thermal.thermal,1,NumXmaxConnections); % XmaxH
+    end
+
+    variables
+        iCell = {repmat(0,20,1),'A'}; % Cell current (positive in)
+        vCell = {repmat(0,20,1),'V'}; % Cell terminal voltage
+        socCell = {value={repmat(1,20,1),'1'},priority=priority.high}; % Cell state of charge
+        numCyclesCell = {value={repmat(0,20,1),'1'},priority=priority.high}; % Cell discharge cycles
+        temperatureCell = {value={repmat(298.15,20,1),'K'},priority=priority.high}; % Cell temperature
+        vParallelAssembly = {value={repmat(0,10,1),'V'},priority=priority.none}; % Parallel Assembly Voltage
+        socParallelAssembly = {value={repmat(1,10,1),'1'},priority=priority.none}; % Parallel Assembly state of charge
+    end
+
+    equations
+        assert(length(iCell) == CellCount);
+        assert(length(vCell) == CellCount);
+        assert(length(socCell) == CellCount);
+        assert(length(numCyclesCell) == CellCount);
+        assert(length(temperatureCell) == CellCount);
+        assert(length(vParallelAssembly) == S);
+        assert(length(socParallelAssembly) == S);
+        assert(isequal(size(AmbientResistance),[1,1]) || isequal(size(AmbientResistance),[NumCellThermalNodeElements,P*S]),...
+            'Cell level ambient thermal path resistance must be scalar or an M-by-N array, where M is the number of elements of the cell thermal node and N is number of cells modeled by the block.');
+        assert(isequal(size(XminThermalResistance),[1,1]) || isequal(size(XminThermalResistance),[1,NumXminConnections]),...
+            'Cell-level thermal path resistance at Xmin boundary must be scalar or row vector. Set the size of this vector to number of Xmin thermal connections modeled by the block.');
+        assert(isequal(size(XmaxThermalResistance),[1,1]) || isequal(size(XmaxThermalResistance),[1,NumXmaxConnections]),...
+            'Cell-level thermal path resistance at Xmax boundary must be scalar or row vector. Set the size of this vector to number of Xmax thermal connections modeled by the block.');
+    end
+
+    connections
+        connect(p,ParallelAssembly(1).p);
+        connect(n,ParallelAssembly(end).n);
+        connect(ParallelAssembly(:).AmbH,AmbH);
+    end
+
+    annotations
+        [p] : Side=top;
+        [n] : Side=bottom;
+        [XminH] : Side=left;
+        [XmaxH] : Side=right;
+        UILayout = [UIGroup("Main",SOC_vecCell,T_vecCell,V0_matCell,V_rangeCell,R0_matCell,AHCell,extrapolation_optionCell),...
+            UIGroup("Thermal",thermal_massCell,AmbientResistance,XminThermalResistance,XmaxThermalResistance)];
+        Icon = 'module.svg';
+    end
+
+    for Sidx = 1:S
+        components(ExternalAccess=observe,CompileReuse=true)
+            ParallelAssembly(Sidx) = batt21700.ParallelAssemblies.ParallelAssemblyType1(...
+                P = P,SOC_vecCell = SOC_vecCell,T_vecCell = T_vecCell,...
+                V0_matCell = V0_matCell,V_rangeCell = V_rangeCell,R0_matCell = R0_matCell,...
+                AHCell = AHCell,extrapolation_optionCell = extrapolation_optionCell,...
+                thermal_massCell = thermal_massCell,...
+                AmbientResistance = AmbientResistanceScaled(:,AmbientResistanceConnectionIndex(1,Sidx):AmbientResistanceConnectionIndex(2,Sidx)),...
+                XminThermalResistance = XminThermalResistanceScaled(((Sidx-1)*NumXminConnections/S+1):(Sidx*NumXminConnections/S)),...
+                XmaxThermalResistance = XmaxThermalResistanceScaled(((Sidx-1)*NumXmaxConnections/S+1):(Sidx*NumXmaxConnections/S)),iCell.priority = priority.none,...
+                vCell.priority = priority.none,socCell.priority = priority.none,...
+                numCyclesCell.priority = priority.none,temperatureCell.priority = priority.none,...
+                vParallelAssembly.priority = priority.none,...
+                socParallelAssembly.priority = priority.none);
+        end
+    end
+
+    for Sidx = 1:S-1
+        connections
+            connect(ParallelAssembly(Sidx).n,ParallelAssembly(Sidx+1).p);
+        end
+    end
+
+    for Sidx = 1:S
+        equations
+            ParallelAssembly(Sidx).iCell == reshape(iCell((Sidx*P-(P-1)):(Sidx*P)),P,1);
+            ParallelAssembly(Sidx).vCell == reshape(vCell((Sidx*P-(P-1)):(Sidx*P)),P,1);
+            ParallelAssembly(Sidx).socCell == reshape(socCell((Sidx*P-(P-1)):(Sidx*P)),P,1);
+            ParallelAssembly(Sidx).numCyclesCell == reshape(numCyclesCell((Sidx*P-(P-1)):(Sidx*P)),P,1);
+            ParallelAssembly(Sidx).temperatureCell == reshape(temperatureCell((Sidx*P-(P-1)):(Sidx*P)),P,1);
+            ParallelAssembly(Sidx).vParallelAssembly == vParallelAssembly(Sidx);
+            ParallelAssembly(Sidx).socParallelAssembly == socParallelAssembly(Sidx);
+        end
+    end
+
+    for thermalNodeElementIdx = 1:NumCellThermalNodeElements
+        for Sidx = 1:S
+            connections
+                connect(ParallelAssembly(:,Sidx).XminH,XminH(:,((Sidx-1)*NumXminConnections/S+1):(Sidx*NumXminConnections/S)));
+            end
+        end
+    end
+
+    for thermalNodeElementIdx = 1:NumCellThermalNodeElements
+        for Sidx = 1:S
+            connections
+                connect(ParallelAssembly(:,Sidx).XmaxH,XmaxH(:,((Sidx-1)*NumXmaxConnections/S+1):(Sidx*NumXmaxConnections/S)));
+            end
+        end
+    end
+end
+
+function indexes = getConnectionIndex(parameter,numChildComponents)
+    definitions
+        parameterWidth=size(parameter,2);
+        firstIndex=(1:max(1,parameterWidth/numChildComponents):parameterWidth) .* ones(1,numChildComponents);
+        lastIndex=firstIndex + max(1,parameterWidth/numChildComponents)-1;
+        indexes=[firstIndex;lastIndex];
+    end
+end

@@ -4,14 +4,9 @@ component ParallelAssemblyType1
     %    Model resolution: Detailed
     %    Number of cells: 2
     %
-    %
-    %    Inter-cell heat transfer: on
-    %    Inter-cell radiation heat transfer: on
-    %    Number of inter-cell thermal connections: 1
-    %
     %    MATLAB version: 25.2
     %    Simscape Battery version: 25.2
-    %    Simscape code generated on: 22-Sep-2026 07:48:31
+    %    Simscape code generated on: 22-Sep-2026 08:28:44
 
     parameters
         SOC_vecCell = {[0, .1, .25, .5, .75, .9, 1],'1'}; % Vector of state-of-charge values, SOC
@@ -23,16 +18,15 @@ component ParallelAssemblyType1
         extrapolation_optionCell = {simscape.enum.extrapolation.nearest,'1'}; % Extrapolation method for all tables
         thermal_massCell = {100,'J/K'}; % Thermal mass
         AmbientResistance = {25,'K/W'}; % Cell level ambient thermal path resistance
+        XminThermalResistance = {25,'K/W'}; % Cell-level thermal path resistance at Xmin boundary
         XmaxThermalResistance = {25,'K/W'}; % Cell-level thermal path resistance at Xmax boundary
-        InterCellThermalResistance = {1,'K/W'}; % Inter-cell thermal path resistance
-        InterCellRadiationArea = {1e-3,'m^2'}; % Inter-cell radiation heat transfer area
-        InterCellRadiationCoefficient = {1e-6,'W/(K^4*m^2)'}; % Inter-cell radiation heat transfer coefficient
     end
 
     parameters(ExternalAccess=none)
         P = 2; % Batteries in Parallel
-        NumInterCellThermalConnections = 1; % Number of inter-cell thermal connections
-        InterCellConnectionsMapping = [1;2]; % Cell model to neighbors mapping
+        NumXminConnections = 1; % Number of thermal connections at Xmin boundary
+        XminConnectionsMapping = 1; % Cell models at Xmin boundary with thermal connections
+        NumCellsAtXminBoundary = 1; % Number of cells at Xmin boundary
         NumXmaxConnections = 1; % Number of thermal connections at Xmax boundary
         XmaxConnectionsMapping = 2; % Cell models at Xmax boundary with thermal connections
         NumCellsAtXmaxBoundary = 1; % Number of cells at Xmax boundary
@@ -41,19 +35,16 @@ component ParallelAssemblyType1
 
     parameters(Access=private)
         AmbientResistanceScaled = AmbientResistance .* ones(NumCellThermalNodeElements,P) * NumCellThermalNodeElements / size(AmbientResistance,1); % Scaled cell level ambient thermal path resistance
+        XminThermalResistanceScaled = XminThermalResistance .* ones(1,NumXminConnections) * NumCellThermalNodeElements; % Scaled cell-level thermal path resistance at Xmin boundary
         XmaxThermalResistanceScaled = XmaxThermalResistance .* ones(1,NumXmaxConnections) * NumCellThermalNodeElements; % Scaled cell-level thermal path resistance at Xmax boundary
-        InterCellRadiationAreaScaled = InterCellRadiationArea .* ones(NumCellThermalNodeElements,NumInterCellThermalConnections) * size(InterCellRadiationArea,1) / NumCellThermalNodeElements; % Scaled inter-cell radiation heat transfer area
-        InterCellRadiationCoefficientScaled = InterCellRadiationCoefficient .* ones(NumCellThermalNodeElements,NumInterCellThermalConnections); % Scaled inter-cell radiation heat transfer coefficient
-        InterCellThermalResistanceScaled = InterCellThermalResistance .* ones(NumCellThermalNodeElements,NumInterCellThermalConnections) * NumCellThermalNodeElements / size(InterCellThermalResistance,1); % Scaled inter-cell thermal path resistance
     end
 
     nodes
         p = foundation.electrical.electrical; % +
         n = foundation.electrical.electrical; % -
         AmbH = foundation.thermal.thermal; % AmbH
+        XminH = repmat(foundation.thermal.thermal,1,NumXminConnections); % XminH
         XmaxH = repmat(foundation.thermal.thermal,1,NumXmaxConnections); % XmaxH
-        InterCellH = repmat(foundation.thermal.thermal,NumCellThermalNodeElements,P); % ICH
-        InterCellRadiativeH = repmat(foundation.thermal.thermal,NumCellThermalNodeElements,P); % ICRH
     end
 
     variables
@@ -76,14 +67,10 @@ component ParallelAssemblyType1
         assert(length(socParallelAssembly) == 1);
         assert(isequal(size(AmbientResistance),[1,1]) || isequal(size(AmbientResistance),[NumCellThermalNodeElements,P]),...
             'Cell level ambient thermal path resistance must be scalar or an M-by-N array, where M is the number of elements of the cell thermal node and N is number of cells modeled by the block.');
+        assert(isequal(size(XminThermalResistance),[1,1]) || isequal(size(XminThermalResistance),[1,NumXminConnections]),...
+            'Cell-level thermal path resistance at Xmin boundary must be scalar or row vector. Set the size of this vector to number of Xmin thermal connections modeled by the block.');
         assert(isequal(size(XmaxThermalResistance),[1,1]) || isequal(size(XmaxThermalResistance),[1,NumXmaxConnections]),...
             'Cell-level thermal path resistance at Xmax boundary must be scalar or row vector. Set the size of this vector to number of Xmax thermal connections modeled by the block.');
-        assert(isequal(size(InterCellRadiationArea),[1,1]) || isequal(size(InterCellRadiationArea),[NumCellThermalNodeElements,NumInterCellThermalConnections]),...
-            'Inter-cell radiation heat transfer area must be scalar or an M-by-N array, where M is the number of elements of the cell thermal node and N is number of inter-cell thermal connections modeled by the block.');
-        assert(isequal(size(InterCellRadiationCoefficient),[1,1]) || isequal(size(InterCellRadiationCoefficient),[NumCellThermalNodeElements,NumInterCellThermalConnections]),...
-            'Inter-cell radiation heat transfer coefficient must be scalar or an M-by-N array, where M is the number of elements of the cell thermal node and N is number of inter-cell thermal connections modeled by the block.');
-        assert(isequal(size(InterCellThermalResistance),[1,1]) || isequal(size(InterCellThermalResistance),[NumCellThermalNodeElements,NumInterCellThermalConnections]),...
-            'Inter-cell thermal path resistance must be scalar or an M-by-N array, where M is the number of elements of the cell thermal node and N is number of inter-cell thermal connections modeled by the block.');
         vParallelAssembly == Cell21700(1).p.v - Cell21700(1).n.v;
         socParallelAssembly == sum([Cell21700.stateOfCharge])/P;
     end
@@ -91,11 +78,10 @@ component ParallelAssemblyType1
     annotations
         [p] : Side=top;
         [n] : Side=bottom;
+        [XminH] : Side=left;
         [XmaxH] : Side=right;
-        [InterCellH] : Side=bottom;
-        [InterCellRadiativeH] : Side=bottom;
         UILayout = [UIGroup("Main",SOC_vecCell,T_vecCell,V0_matCell,V_rangeCell,R0_matCell,AHCell,extrapolation_optionCell),...
-            UIGroup("Thermal",thermal_massCell,AmbientResistance,XmaxThermalResistance,InterCellThermalResistance,InterCellRadiationArea,InterCellRadiationCoefficient)];
+            UIGroup("Thermal",thermal_massCell,AmbientResistance,XminThermalResistance,XmaxThermalResistance)];
         Icon = 'parallelAssembly.svg';
     end
 
@@ -151,6 +137,22 @@ component ParallelAssemblyType1
     end
 
     for thermalNodeElementIdx = 1:NumCellThermalNodeElements
+        for cellsAtXminIdx = 1:NumXminConnections
+            components(ExternalAccess=observe)
+                XminThermalResistor(thermalNodeElementIdx,cellsAtXminIdx) = foundation.thermal.elements.resistance(...
+                    resistance = XminThermalResistanceScaled(cellsAtXminIdx));
+            end
+        end
+
+        for cellsAtXminIdx = XminConnectionsMapping
+            connections
+                connect(Cell21700(cellsAtXminIdx).H(thermalNodeElementIdx),XminThermalResistor(thermalNodeElementIdx,find(XminConnectionsMapping==cellsAtXminIdx)).A);
+                connect(XminThermalResistor(thermalNodeElementIdx,find(XminConnectionsMapping==cellsAtXminIdx)).B,XminH(:,find(XminConnectionsMapping==cellsAtXminIdx)));
+            end
+        end
+    end
+
+    for thermalNodeElementIdx = 1:NumCellThermalNodeElements
         for cellsAtXmaxIdx = 1:NumXmaxConnections
             components(ExternalAccess=observe)
                 XmaxThermalResistor(thermalNodeElementIdx,cellsAtXmaxIdx) = foundation.thermal.elements.resistance(...
@@ -162,47 +164,6 @@ component ParallelAssemblyType1
             connections
                 connect(Cell21700(cellsAtXmaxIdx).H(thermalNodeElementIdx),XmaxThermalResistor(thermalNodeElementIdx,find(XmaxConnectionsMapping==cellsAtXmaxIdx)).A);
                 connect(XmaxThermalResistor(thermalNodeElementIdx,find(XmaxConnectionsMapping==cellsAtXmaxIdx)).B,XmaxH(:,find(XmaxConnectionsMapping==cellsAtXmaxIdx)));
-            end
-        end
-    end
-
-    for NodeElementIndex = 1:NumCellThermalNodeElements
-        for InterCellConnectionIndex = 1:NumInterCellThermalConnections
-            components(ExternalAccess=observe)
-                InterCellThermalResistor(NodeElementIndex,InterCellConnectionIndex) = foundation.thermal.elements.resistance(...
-                    resistance = InterCellThermalResistanceScaled(NodeElementIndex,InterCellConnectionIndex));
-            end
-
-            connections
-                connect(Cell21700(InterCellConnectionsMapping(1,InterCellConnectionIndex)).H(NodeElementIndex),InterCellThermalResistor(NodeElementIndex,InterCellConnectionIndex).A);
-                connect(InterCellThermalResistor(NodeElementIndex,InterCellConnectionIndex).B,Cell21700(InterCellConnectionsMapping(2,InterCellConnectionIndex)).H(NodeElementIndex));
-            end
-        end
-
-        for Pidx = 1:P
-            connections
-                connect(Cell21700(Pidx).H(NodeElementIndex),InterCellH(NodeElementIndex,Pidx));
-            end
-        end
-    end
-
-    for NodeElementIndex = 1:NumCellThermalNodeElements
-        for InterCellConnectionIndex = 1:NumInterCellThermalConnections
-            components(ExternalAccess=observe)
-                InterCellRadiativeHeatTransfer(NodeElementIndex,InterCellConnectionIndex) = foundation.thermal.elements.radiation(...
-                    area = InterCellRadiationAreaScaled(NodeElementIndex,InterCellConnectionIndex),...
-                    rad_tr_coeff = InterCellRadiationCoefficientScaled(NodeElementIndex,InterCellConnectionIndex));
-            end
-
-            connections
-                connect(Cell21700(InterCellConnectionsMapping(1,InterCellConnectionIndex)).H(NodeElementIndex),InterCellRadiativeHeatTransfer(NodeElementIndex,InterCellConnectionIndex).A);
-                connect(InterCellRadiativeHeatTransfer(NodeElementIndex,InterCellConnectionIndex).B,Cell21700(InterCellConnectionsMapping(2,InterCellConnectionIndex)).H(NodeElementIndex));
-            end
-        end
-
-        for Pidx = 1:P
-            connections
-                connect(Cell21700(Pidx).H(NodeElementIndex),InterCellRadiativeH(NodeElementIndex,Pidx));
             end
         end
     end
